@@ -23,6 +23,7 @@ matches = "0.1.6"
 selectors = "0.22"
 smallvec = "1"
 tendril = "0.4"
+fnv = "1.0.7"
 
 [dependencies.getopts]
 version = "0.2.18"

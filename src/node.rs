@@ -1,14 +1,16 @@
 //! HTML nodes.
 
 use std::collections::{hash_map, hash_set};
-use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::ops::Deref;
+use std::cell::RefCell;
 
 use html5ever::tendril::StrTendril;
 use html5ever::{Attribute, LocalName, QualName};
 
 use selectors::attr::CaseSensitivity;
+
+use fnv::{FnvHashSet, FnvHashMap};
 
 /// An HTML node.
 #[derive(Clone, PartialEq, Eq)]
@@ -231,13 +233,17 @@ pub struct Element {
     pub name: QualName,
 
     /// The element ID.
-    pub id: Option<LocalName>,
+    pub id: Option<String>,
 
     /// The element classes.
-    pub classes: HashSet<LocalName>,
+    pub classes: FnvHashSet<String>,
 
     /// The element attributes.
-    pub attrs: HashMap<QualName, StrTendril>,
+    pub attrs: FnvHashMap<QualName, StrTendril>,
+}
+
+thread_local! {
+    static CLASS_CACHE: RefCell<FnvHashMap<String, FnvHashSet<String>>> = RefCell::new(FnvHashMap::default());
 }
 
 impl Element {
@@ -246,17 +252,24 @@ impl Element {
         let id = attrs
             .iter()
             .find(|a| a.name.local.deref() == "id")
-            .map(|a| LocalName::from(a.value.deref()));
+            .map(|a| String::from(a.value.deref()));
 
-        let classes: HashSet<LocalName> = attrs
+        let classes: FnvHashSet<String> = attrs
             .iter()
             .find(|a| a.name.local.deref() == "class")
-            .map_or(HashSet::new(), |a| {
-                a.value
-                    .deref()
-                    .split_whitespace()
-                    .map(LocalName::from)
-                    .collect()
+            .map_or(FnvHashSet::default(), |a| {
+                let val = a.value.deref().to_string();
+                CLASS_CACHE.with(|cell| {
+                    let mut map = cell.borrow_mut();
+                    map.entry(val).or_insert_with(|| {
+                        a.value
+                            .deref()
+                            .split(' ')
+                            .filter(|x| !x.is_empty())
+                            .map(String::from)
+                            .collect()
+                    }).clone()
+                })
             });
 
         Element {
@@ -308,7 +321,7 @@ impl Element {
 #[allow(missing_debug_implementations)]
 #[derive(Clone)]
 pub struct Classes<'a> {
-    inner: hash_set::Iter<'a, LocalName>,
+    inner: hash_set::Iter<'a, String>,
 }
 
 impl<'a> Iterator for Classes<'a> {
